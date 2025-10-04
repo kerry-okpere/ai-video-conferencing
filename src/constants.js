@@ -17,3 +17,7 @@ export const rtcConfig = {
     { urls: "stun:stun4.l.google.com:19302" },
   ],
 };
+
+export const WHISPER_SAMPLING_RATE = 16_000;
+const MAX_AUDIO_LENGTH = 30; // seconds
+export const MAX_SAMPLES = WHISPER_SAMPLING_RATE * MAX_AUDIO_LENGTH;
