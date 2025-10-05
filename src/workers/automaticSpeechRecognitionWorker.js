@@ -1,4 +1,4 @@
-import { TextStreamer, AutoProcessor, full, AutoTokenizer, WhisperForConditionalGeneration } from '@huggingface/transformers';
+import { AutoProcessor, full, AutoTokenizer, WhisperForConditionalGeneration } from '@huggingface/transformers';
 
 const MAX_NEW_TOKENS = 64;
 
@@ -30,6 +30,63 @@ class AutomaticSpeechRecognitionPipeline {
     }
 }
 
+async function load() {
+    console.log("WEBWORKER: Loading model in worker...");
+    try {
+        const [_, __, model] = await AutomaticSpeechRecognitionPipeline.getInstance(handleLoaded);
+
+        // Compiling shaders and warming up model
+        // Run model and warming up model and with dummy input to compile shaders...
+        await model.generate({
+            input_features: full([1, 80, 3000], 0.0),
+            max_new_tokens: 1,
+        });
+        self.postMessage({ status: "loaded" });
+    } catch (error) {
+        console.log("WEBWORKER: Error loading model:", error);
+    }
+}
+
+let processing = false;
+async function generate({ audio, language }) {
+    if (processing) return;
+    processing = true;
+
+    self.postMessage({ status: "start" });
+
+    const [tokenizer, processor, model] = await AutomaticSpeechRecognitionPipeline.getInstance();
+
+    const inputs = await processor(audio);
+
+    const outputs = await model.generate({
+        ...inputs,
+        max_new_tokens: MAX_NEW_TOKENS,
+        language,
+    });
+
+    const decoded = tokenizer.batch_decode(outputs, {
+        skip_special_tokens: true,
+    });
+
+    self.postMessage({ status: "complete", text: decoded.join(" ") });
+    processing = false;
+}
+
+self.addEventListener("message", async (event) => {
+    const { type, data } = event.data;
+
+    switch (type) {
+        case "worker:load":
+            load();
+            break;
+        case "worker:generate":
+            generate(data);
+            break;
+    }
+});
+
+
+// Helper functions for tracking progress of model loading
 let files = new Map();
 function handleLoaded(loaded) {
     // Status: 'initiate' | 'download' | 'progress' | 'done'
@@ -73,103 +130,3 @@ function sendProgress() {
         self.postMessage({ status: "loading", percentage });
     }
 }
-
-async function load() {
-    console.log("WEBWORKER: Loading model in worker...");
-    try {
-        console.log("WEBWORKER: Loading AutomaticSpeechRecognitionPipeline...");
-        const [_, __, model] = await AutomaticSpeechRecognitionPipeline.getInstance(handleLoaded);
-
-        // Compiling shaders and warming up model
-        // Run model and warming up model and with dummy input to compile shaders...
-        await model.generate({
-            input_features: full([1, 80, 3000], 0.0),
-            max_new_tokens: 1,
-        });
-        self.postMessage({ status: "loaded" });
-    } catch (error) {
-        console.log("WEBWORKER: Error loading model:", error);
-        self.postMessage({ status: "error", error: error.message });
-    }
-}
-
-let processing = false;
-async function generate({ audio, language }) {
-    if (processing) return;
-    processing = true;
-
-    // Tell the main thread we are starting
-    self.postMessage({ status: "start" });
-
-    // Load the model and tokenizer
-    const [tokenizer, processor, model] = await AutomaticSpeechRecognitionPipeline.getInstance();
-
-    // Stream text
-    const streamer = new TextStreamer(tokenizer, {
-        skip_prompt: true,
-        skip_special_tokens: true,
-    });
-
-
-    // Try this part 1 below out to see if it works 
-    // streamer.onText = (text) => {
-    //     self.postMessage({ status: "partial", transcription: text });
-    // };
-
-    // Try this part 2 below out to see if it works
-    // const streamer = new WhisperTextStreamer(tokenizer, {
-    //     callback_function: (text) => {
-    //         // new text chunk arrived
-    //         postMessage({ type: "partial", text });
-    //     },
-    //     on_chunk_start: (index) => { /* e.g. show "chunk 1 started" */ },
-    //     on_chunk_end: (index) => { /* e.g. chunk ended */ },
-    //     on_finalize: (text) => {
-    //         postMessage({ type: "final", text });
-    //     },
-    // });
-
-    const inputs = await processor(audio);
-
-    // Part 3: Try this part 3 out to see if it works
-    // // Process the audio input
-    // const audioInput = processor.audioToInput(audio);
-    // const transcription = await model.generate(audioInput);
-
-    const outputs = await model.generate({
-        ...inputs,
-        max_new_tokens: MAX_NEW_TOKENS,
-        language,
-        streamer,
-    });
-
-    console.log("WEBWORKER: Waiting for outputs...", outputs);
-
-    const decoded = tokenizer.batch_decode(outputs, {
-        skip_special_tokens: true,
-    });
-
-    // Send the transcription back to the main thread
-    self.postMessage({
-        status: "complete",
-        output: decoded,
-    });
-    console.log("WEBWORKER: Transcription complete:", decoded);
-    processing = false;
-
-    // self.postMessage({ status: "done", transcription });
-    // processing = false;
-}
-
-self.addEventListener("message", async (event) => {
-    const { type, data } = event.data;
-
-    switch (type) {
-        case "worker:load":
-            load();
-            break;
-        case "worker:generate":
-            generate(data);
-            break;
-    }
-});

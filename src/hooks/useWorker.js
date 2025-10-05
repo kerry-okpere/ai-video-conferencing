@@ -53,7 +53,7 @@ const useWorker = ({ onStart, onComplete }) => {
     }, []);
 
     return {
-        modelIsLoaded: status === "loaded",
+        isLoaded: status === "loaded",
         loading,
         percentageLoaded,
         status,
