@@ -1,7 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { MAX_RECONNECTION_ATTEMPTS, rtcConfig } from "../constants";
 
-const useSignaling = ({ onTrack, onRoomCreated, onNewClientSocketConnection, onicecandidateAdded }) => {
+// TODO signalling sever should only handle signalling and not room management
+// Move room management to a separate service
+const useSignaling = ({
+    onTrack,
+    onRoomCreated,
+    onNewRoomAdded,
+    onParticipantJoined,
+    onRoomClosed,
+    onNewClientSocketConnection,
+    onicecandidateAdded
+}) => {
     const pcRef = useRef(null);
     const wsRef = useRef(null);
     const [clientId, setClientId] = useState(null);
@@ -60,10 +70,31 @@ const useSignaling = ({ onTrack, onRoomCreated, onNewClientSocketConnection, oni
                         break;
 
                     case "room-created":
-                        onRoomCreated && onRoomCreated(message.roomId);
+                        // This only triggers for the user that created the room
+                        onRoomCreated && onRoomCreated({
+                            roomId: message.roomId,
+                            participants: message.participants
+                        });
                         break;
 
-                    case "join":
+                    case "room-closed":
+                        onRoomClosed && onRoomClosed({
+                            roomId: message.roomId,
+                        });
+                        break;
+                    case "new-room":
+                        // This triggers for all other users when a new room is created
+                        onNewRoomAdded && onNewRoomAdded({
+                            roomId: message.roomId,
+                        });
+                        break;
+                    case "new-participant":
+                        onParticipantJoined && onParticipantJoined({
+                            participants: message.participants,
+                            roomId: message.roomId
+                        });
+                        break;
+                    case "joined-room":
                         console.log("Participant is attempting to join the call");
                         await createOfferWebSocket();
                         break;
@@ -101,6 +132,10 @@ const useSignaling = ({ onTrack, onRoomCreated, onNewClientSocketConnection, oni
                             await pcRef.current.addIceCandidate(message.candidate);
                             onicecandidateAdded && onicecandidateAdded(message.candidate);
                         }
+                        break;
+
+                    case "error":
+                        console.error(`Error from server: ${message.message}`);
                         break;
                 }
             };
