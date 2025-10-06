@@ -5,7 +5,6 @@ const WaitingRoom = ({
   actionText,
   onCollectMedia,
   onJoinCall,
-  model,
 }) => {
   const [name, setName] = useState("");
   const localVideo = useRef(null);
@@ -47,37 +46,9 @@ const WaitingRoom = ({
         />
       </div>
 
-      {model.loading && (
-        <div className="loading-progress">
-          <label htmlFor="file">
-            Loading model, this might take a few minutes...
-          </label>
-
-          <progress id="file" max={100} value={model.percentage}>
-            {model.percentage}%
-          </progress>
-        </div>
-      )}
-
-      {!model.isLoaded && (
-        <button onClick={() => onJoinCall(name)}>{`${actionText} without model`}</button>
-      )}
-      {model.isLoaded ? (
-        <button disabled={!name} onClick={() => onJoinCall(name)}>
-          {actionText}
-        </button>
-      ) : (
-        <div className="model-loader">
-          {!model.loading && (
-            <p>Call requires STT model to be loaded before you can join.</p>
-          )}
-          <button disabled={model.loading} onClick={model.load}>
-            {model.loading
-              ? `loading model... (${model.percentage}%)`
-              : "Load model"}
-          </button>
-        </div>
-      )}
+      <button disabled={!name} onClick={() => onJoinCall(name)}>
+        {actionText}
+      </button>
     </section>
   );
 };

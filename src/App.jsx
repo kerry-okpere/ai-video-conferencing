@@ -20,10 +20,10 @@ function App() {
   const [remoteStream, setRemoteStream] = useState(null);
 
   // Automatic Speech Recognition
-  const recorderRef = useRef(null);
   const [isListening, setIsListening] = useState(false); // use in the ui to show user we are listening
   const [transcription, setTranscription] = useState("");
   const [language] = useState("en");
+  const [audioChunks, setAudioChunks] = useState([]);
 
   const {
     loading: loadingModel,
@@ -34,24 +34,35 @@ function App() {
   } = useWorker({
     onStart: () => {
       setIsListening(true);
-      recorderRef.current?.requestData();
     },
     onComplete: (event) => {
       setIsListening(false);
-      console.log("Final transcription:", event);
-      setTranscription(event.data.output);
+      setTranscription((prev) => {
+        const newText = prev ? prev + " \n" + event.data.text : event.data.text;
+        sendDataChannelMessage(newText);
+        return newText;
+      });
+
+      // Automatically process the next audio chunk if available
+      setAudioChunks((prev) => {
+        if (prev.length) {
+          const [nextChunk, ...rest] = prev;
+          generate(nextChunk);
+          return rest;
+        }
+        return [];
+      });
     },
   });
 
-  // useMicVAD({
-  //   startOnLoad: false,
-  //   onSpeechEnd: (audio) => {
-  //     generate({ audio, language });
-  //     console.log("User stopped talking", audio);
-  //   },
-  // });
+  const { start } = useMicVAD({
+    startOnLoad: false,
+    onSpeechEnd: (audio) => {
+      setAudioChunks((prev) => [...prev, { audio, language }]);
+    },
+  });
 
-  const { wsRef, pcRef, clientId } = useSignaling({
+  const { wsRef, pcRef, clientId, sendDataChannelMessage } = useSignaling({
     onTrack: async (event) => {
       const stream = event.streams[0];
       if (stream) {
@@ -82,6 +93,9 @@ function App() {
         return currentRoom;
       });
     },
+    onDataChannelMessage: (message) => {
+      console.log("Received message via data channel:", message);
+    },
     onNewClientSocketConnection: (message) => {
       console.log("WebSocket connection established:", message);
       setRoomIds(() => {
@@ -95,7 +109,7 @@ function App() {
   });
 
   const participantName = currentRoom?.participants?.find(
-    (p) => p.id !== clientId
+    (p) => p.clientId !== clientId
   )?.username;
 
   const joinCall = async (username) => {
@@ -155,8 +169,18 @@ function App() {
   }, [remoteStream]);
 
   useEffect(() => {
+    if (Boolean(audioChunks.length) && !isListening) {
+      const [nextChunk, ...rest] = audioChunks;
+      generate(nextChunk);
+      setAudioChunks(rest);
+    }
+  }, [audioChunks, isListening]);
+
+  useEffect(() => {
     if (isCallActive && localVideo.current && stream) {
       localVideo.current.srcObject = stream;
+
+      start();
     }
   }, [stream, isCallActive]);
 
@@ -198,10 +222,11 @@ function App() {
               }}
             ></video>
           </figure>
+
+          {isListening ? <div>Listening...</div> : <div>{transcription}</div>}
         </>
       ) : (
         <>
-          {JSON.stringify(roomIds)}
           <WaitingRoom
             stream={stream}
             model={{
