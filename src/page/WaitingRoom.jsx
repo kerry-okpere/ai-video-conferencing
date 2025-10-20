@@ -20,7 +20,7 @@ const WaitingRoom = ({
   }, [stream]);
 
   return (
-    <section>
+    <section className="waiting-room">
       <header>
         <h2>Join Call</h2>
         <p>Set up your Audio, Video and Name before joining</p>

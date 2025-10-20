@@ -21,6 +21,17 @@ const useSignaling = ({
     const reconnectionAttemptsRef = useRef(0);
     const dataChannelRef = useRef(null);
 
+    const leaveRoom = () => {
+        try {
+            if (wsRef?.current && wsRef.current.readyState === WebSocket.OPEN) {
+                wsRef.current.send(
+                    JSON.stringify({ type: "leave-room", clientId: clientIdRef.current })
+                );
+            }
+        } catch (err) {
+            console.warn("Failed to notify server about leaving room", err);
+        }
+    }
     useEffect(() => {
         const connectWebRTC = () => {
             if (pcRef.current) return;
@@ -216,7 +227,7 @@ const useSignaling = ({
     };
 
 
-    return { wsRef, dataChannel: dataChannelRef.current, pcRef, clientId, sendDataChannelMessage };
+    return { wsRef, leaveRoom, dataChannel: dataChannelRef.current, pcRef, clientId, sendDataChannelMessage };
 };
 
 export default useSignaling;
