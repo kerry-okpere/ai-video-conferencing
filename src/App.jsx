@@ -6,7 +6,7 @@ import useSignaling from "./hooks/useSignaling";
 import useWorker from "./hooks/useWorker";
 import { LANGUAGES } from "./constants";
 import { useMicVAD } from "@ricky0123/vad-react";
-// import { useTranslatorManager } from "./hooks/useTranslatorManager";
+import { useTranslatorManager } from "./hooks/useTranslatorManager";
 
 const constraints = { audio: true, video: true };
 const IS_WEBGPU_AVAILABLE = !!navigator.gpu;
@@ -47,9 +47,39 @@ function App() {
       const sentLanguage = event.data?.language || language;
 
       setTranscriptions((prev) => {
-        sendDataChannelMessage(
-          JSON.stringify({ message: text, language: sentLanguage })
-        );
+        // Handle translation and message sending
+        const handleTranslationAndSend = async () => {
+          if (isTranslatorSupported && language !== "en") {
+            try {
+              // User spoke in their selected language, translate TO English for others
+              const translatedText = await translate(text, language, "en");
+
+              sendDataChannelMessage(
+                JSON.stringify({
+                  message: translatedText, // Send English translation as main message
+                  language: "en",
+                  translation: {
+                    message: text, // Original in user's language
+                    language: language,
+                  },
+                })
+              );
+            } catch (error) {
+              console.error("Translation failed:", error);
+              // Send original message if translation fails
+              sendDataChannelMessage(
+                JSON.stringify({ message: text, language: sentLanguage })
+              );
+            }
+          } else {
+            // User spoke English, no translation needed
+            sendDataChannelMessage(
+              JSON.stringify({ message: text, language: sentLanguage })
+            );
+          }
+        };
+
+        handleTranslationAndSend();
 
         return [
           ...prev,
@@ -116,7 +146,7 @@ function App() {
       },
       onDataChannelMessage: (data) => {
         // store incoming data as a bubble
-        const { message, language } = JSON.parse(data);
+        const { message, language, translation } = JSON.parse(data);
         setTranscriptions((prev) => [
           ...prev,
           {
@@ -125,6 +155,7 @@ function App() {
             sender: participantName.current || "Remote",
             outgoing: false,
             language: language,
+            translation: translation || null,
           },
         ]);
         console.log("Received message via data channel:", message);
@@ -132,7 +163,6 @@ function App() {
       onNewClientSocketConnection: (message) => {
         console.log("WebSocket connection established:", message);
         setRoomIds(() => {
-          console.log(message.roomIds);
           return message.roomIds || [];
         });
       },
@@ -195,11 +225,11 @@ function App() {
     setAudioChunks([]);
   }, [listening, pause, terminate, leaveRoom, pcRef, toggleAudioTracks]);
 
-  // const {
-  //   isSupported: isTranslatorSupported,
-  //   translate,
-  //   prewarmTranslators,
-  // } = useTranslatorManager();
+  const {
+    isSupported: isTranslatorSupported,
+    translate,
+    prewarmTranslators,
+  } = useTranslatorManager();
 
   participantName.current = currentRoom?.participants?.find(
     (p) => p.clientId !== clientId
@@ -334,13 +364,15 @@ function App() {
                 >
                   <div className="bubble-sender">{m.sender}</div>
                   <div className="bubble-text">
-                    {m.language === language ? (
-                      <p>{m.text}</p>
-                    ) : (
+                    {m?.translation ? (
                       <p>
-                        <i className="bubble-text-original">{m.text}</i>
-                        <span>{m.text}</span>
+                        <span>{m.translation.message}</span>
+                        <i className="bubble-text-original">
+                          Original: {m.text}
+                        </i>
                       </p>
+                    ) : (
+                      <p>{m.text}</p>
                     )}
                   </div>
                 </div>
@@ -378,10 +410,19 @@ function App() {
           <WaitingRoom
             stream={stream}
             onCollectMedia={getMediaStream}
-            onJoinCall={(name) =>
-              roomIds.length ? joinCall(name) : createRoom(name)
-            }
+            onJoinCall={(name) => {
+              // Prewarm translation models when joining
+              if (isTranslatorSupported && language !== "en") {
+                const otherLanguages = LANGUAGES.filter(l => l.value !== language).map(l => l.value);
+                prewarmTranslators(language, otherLanguages);
+              }
+              return roomIds.length ? joinCall(name) : createRoom(name);
+            }}
             actionText={roomIds.length ? "Join Call" : "Create Room"}
+            onLanguageChange={setLanguage}
+            selectedLanguage={language}
+            isTranslatorSupported={isTranslatorSupported}
+            supportedLanguages={LANGUAGES}
           />
         </>
       )}

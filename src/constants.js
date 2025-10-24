@@ -25,9 +25,9 @@ export const MAX_SAMPLES = WHISPER_SAMPLING_RATE * MAX_AUDIO_LENGTH;
 // Languages constant rendered dynamically
 export const LANGUAGES = [
   { value: "en", label: "English" },
-  { value: "yo", label: "Yoruba" },
+  // { value: "yo", label: "Yoruba" },
   // { value: "ha", label: "Hausa" },
-  // { value: "fr", label: "French" },
+  { value: "fr", label: "French" },
   // comment other languages to reduce the ml download
   // { value: "zh", label: "Chinese" },
   // { value: "de", label: "German" },

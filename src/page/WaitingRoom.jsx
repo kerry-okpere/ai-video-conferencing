@@ -5,6 +5,10 @@ const WaitingRoom = ({
   actionText,
   onCollectMedia,
   onJoinCall,
+  onLanguageChange,
+  selectedLanguage,
+  isTranslatorSupported,
+  supportedLanguages,
 }) => {
   const [name, setName] = useState("");
   const localVideo = useRef(null);
@@ -44,6 +48,25 @@ const WaitingRoom = ({
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
+      </div>
+
+      <div className="language-selection">
+        <label htmlFor="language">Language:</label>
+        <select
+          id="language"
+          value={selectedLanguage}
+          onChange={(e) => onLanguageChange(e.target.value)}
+          disabled={!isTranslatorSupported}
+        >
+          {supportedLanguages.map((lang) => (
+            <option key={lang.value} value={lang.value}>
+              {lang.label}
+            </option>
+          ))}
+        </select>
+        {!isTranslatorSupported && (
+          <p className="warning">Translation not supported in this browser</p>
+        )}
       </div>
 
       <button disabled={!name} onClick={() => onJoinCall(name)}>
