@@ -78,11 +78,14 @@ const useSignaling = ({
 
         const connectWebSocket = () => {
             if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
-            console.log("Connecting to WebSocket server...");
+            console.log("Connecting to WebSocket server...", import.meta.env.VITE_WEBSOCKET_URL);
             const ws = new WebSocket(import.meta.env.VITE_WEBSOCKET_URL);
             wsRef.current = ws;
 
-            ws.onopen = () => { };
+            ws.onopen = () => {
+                console.log("WebSocket connection opened successfully!");
+                reconnectionAttemptsRef.current = 0; // Reset reconnection attempts on successful connection
+            };
 
             ws.onmessage = async (event) => {
                 const message = JSON.parse(event.data);
@@ -161,17 +164,25 @@ const useSignaling = ({
                 }
             };
 
-            ws.onclose = () => {
+            ws.onclose = (event) => {
                 console.log("Disconnected from signaling server");
+                console.log("Close event code:", event.code, "reason:", event.reason, "wasClean:", event.wasClean);
+                console.log("WebSocket URL was:", import.meta.env.VITE_WEBSOCKET_URL);
+                
                 if (reconnectionAttemptsRef.current < MAX_RECONNECTION_ATTEMPTS) {
                     reconnectionAttemptsRef.current++;
+                    console.log(`Attempting to reconnect... (${reconnectionAttemptsRef.current}/${MAX_RECONNECTION_ATTEMPTS})`);
                     // Attempt to reconnect after 3 seconds
                     setTimeout(connectWebSocket, 3000);
+                } else {
+                    console.error("Max reconnection attempts reached. Could not connect to WebSocket server.");
                 }
             };
 
             ws.onerror = (error) => {
-                console.error("WebSocket error:", error);
+                console.error("WebSocket error occurred:", error);
+                console.error("WebSocket URL:", import.meta.env.VITE_WEBSOCKET_URL);
+                console.error("WebSocket readyState:", ws.readyState);
             };
         };
 

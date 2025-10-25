@@ -30,6 +30,7 @@ function App() {
   const [transcriptions, setTranscriptions] = useState([]);
   const [language, setLanguage] = useState("en");
   const [audioChunks, setAudioChunks] = useState([]);
+  const [remoteUserLanguage, setRemoteUserLanguage] = useState("en");
 
   const {
     loading: loadingModel,
@@ -43,38 +44,63 @@ function App() {
       console.log("captured audio");
       setIsTranslating(false);
 
+      // Handle the new event structure with status: "complete" and text: decoded.join(" ")
       const text = event.data?.text || "";
-      const sentLanguage = event.data?.language || language;
-
+      const sentLanguage = language; // We know the user's language from state
+      
+      // Only process if we have text and status is complete
+      if (!text || (event.data?.status && event.data.status !== "complete")) {
+        return;
+      }
+      
       setTranscriptions((prev) => {
         // Handle translation and message sending
         const handleTranslationAndSend = async () => {
-          if (isTranslatorSupported && language !== "en") {
+          console.log(
+            "Handling translation and sending for text:",
+            text,
+            "in language:",
+            sentLanguage,
+            "target language:",
+            remoteUserLanguage
+          );
+          
+          // Check if we need to translate (user's language different from remote user's language)
+          if (isTranslatorSupported && language !== remoteUserLanguage) {
             try {
-              // User spoke in their selected language, translate TO English for others
-              const translatedText = await translate(text, language, "en");
+              // Translate from user's language to remote user's language
+              const translatedText = await translate(text, language, remoteUserLanguage);
 
               sendDataChannelMessage(
                 JSON.stringify({
-                  message: translatedText, // Send English translation as main message
-                  language: "en",
+                  message: translatedText, // Send translation in remote user's language
+                  language: remoteUserLanguage,
                   translation: {
                     message: text, // Original in user's language
                     language: language,
                   },
+                  senderLanguage: language, // Include sender's language for context
                 })
               );
             } catch (error) {
               console.error("Translation failed:", error);
               // Send original message if translation fails
               sendDataChannelMessage(
-                JSON.stringify({ message: text, language: sentLanguage })
+                JSON.stringify({ 
+                  message: text, 
+                  language: sentLanguage,
+                  senderLanguage: language 
+                })
               );
             }
           } else {
-            // User spoke English, no translation needed
+            // No translation needed (same language or translation not supported)
             sendDataChannelMessage(
-              JSON.stringify({ message: text, language: sentLanguage })
+              JSON.stringify({ 
+                message: text, 
+                language: sentLanguage,
+                senderLanguage: language 
+              })
             );
           }
         };
@@ -144,21 +170,49 @@ function App() {
           return currentRoom;
         });
       },
-      onDataChannelMessage: (data) => {
+      onDataChannelMessage: async (data) => {
         // store incoming data as a bubble
-        const { message, language, translation } = JSON.parse(data);
+        const { message, language: messageLanguage, translation, senderLanguage } = JSON.parse(data);
+        console.log("Parsed data channel message:", {
+          message,
+          messageLanguage,
+          translation,
+          senderLanguage,
+        });
+
+        // Check if we need to translate the incoming message to our language
+        let displayMessage = message;
+        let displayTranslation = translation;
+
+        if (isTranslatorSupported && senderLanguage && senderLanguage !== language && messageLanguage !== language) {
+          try {
+            // If the message isn't already in our language, translate it
+            const translatedToOurLanguage = await translate(message, messageLanguage, language);
+            displayMessage = translatedToOurLanguage;
+            
+            // Keep the original as translation info
+            displayTranslation = {
+              message: message,
+              language: messageLanguage
+            };
+          } catch (error) {
+            console.error("Failed to translate incoming message:", error);
+            // Keep original message if translation fails
+          }
+        }
+
         setTranscriptions((prev) => [
           ...prev,
           {
             id: Date.now(),
-            text: message,
+            text: displayMessage,
             sender: participantName.current || "Remote",
             outgoing: false,
-            language: language,
-            translation: translation || null,
+            language: language, // Display in our language
+            translation: displayTranslation,
           },
         ]);
-        console.log("Received message via data channel:", message);
+        console.log("Received message via data channel:", displayMessage);
       },
       onNewClientSocketConnection: (message) => {
         console.log("WebSocket connection established:", message);
@@ -223,6 +277,7 @@ function App() {
     setCurrentRoom(null);
     setTranscriptions([]);
     setAudioChunks([]);
+    setRemoteUserLanguage("en"); // Reset remote user language
   }, [listening, pause, terminate, leaveRoom, pcRef, toggleAudioTracks]);
 
   const {
@@ -231,9 +286,17 @@ function App() {
     prewarmTranslators,
   } = useTranslatorManager();
 
-  participantName.current = currentRoom?.participants?.find(
+  const remoteParticipant = currentRoom?.participants?.find(
     (p) => p.clientId !== clientId
-  )?.username;
+  );
+  participantName.current = remoteParticipant?.username;
+
+  // Update remote user language when participants change
+  useEffect(() => {
+    if (remoteParticipant?.language) {
+      setRemoteUserLanguage(remoteParticipant.language);
+    }
+  }, [remoteParticipant?.language]);
 
   const joinCall = async (username) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -243,6 +306,7 @@ function App() {
           roomId: roomIds[0], // TODO: we need to list available roomIds that are not filled
           clientId,
           username,
+          language,
         })
       );
     }
@@ -255,6 +319,7 @@ function App() {
         roomId: "room1",
         clientId,
         username,
+        language,
       })
     );
   };
@@ -366,9 +431,9 @@ function App() {
                   <div className="bubble-text">
                     {m?.translation ? (
                       <p>
-                        <span>{m.translation.message}</span>
+                        <span>{m.text}</span>
                         <i className="bubble-text-original">
-                          Original: {m.text}
+                          Original: {m.translation.message}
                         </i>
                       </p>
                     ) : (
@@ -412,9 +477,20 @@ function App() {
             onCollectMedia={getMediaStream}
             onJoinCall={(name) => {
               // Prewarm translation models when joining
-              if (isTranslatorSupported && language !== "en") {
-                const otherLanguages = LANGUAGES.filter(l => l.value !== language).map(l => l.value);
-                prewarmTranslators(language, otherLanguages);
+              if (isTranslatorSupported) {
+                const otherLanguages = LANGUAGES.filter(
+                  (l) => l.value !== language
+                ).map((l) => l.value);
+                // Prewarm translators for both directions
+                if (language !== "en") {
+                  prewarmTranslators(language, otherLanguages);
+                }
+                // Also prewarm from other languages to our language
+                otherLanguages.forEach(lang => {
+                  if (lang !== language) {
+                    prewarmTranslators(lang, [language]);
+                  }
+                });
               }
               return roomIds.length ? joinCall(name) : createRoom(name);
             }}
