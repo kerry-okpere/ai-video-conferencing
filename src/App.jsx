@@ -1,39 +1,34 @@
-// https://www.youtube.com/watch?v=8I2axE6j204
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import WaitingRoom from "./page/WaitingRoom";
 import useSignaling from "./hooks/useSignaling";
 import useWorker from "./hooks/useWorker";
 import { WHISPER_SAMPLING_RATE } from "./constants";
-import getAudioInput from "./utils/getAudioInput";
+import { useMicVAD } from "@ricky0123/vad-react";
 
 const constraints = { audio: true, video: true };
 const IS_WEBGPU_AVAILABLE = !!navigator.gpu;
-
-
 
 function App() {
   // Signalling and Peer Connection
   const localVideo = useRef(null);
   const remoteVideo = useRef(null);
-  const [rooms, setRooms] = useState([]);
+  const [roomIds, setRoomIds] = useState([]);
+  const [currentRoom, setCurrentRoom] = useState(null);
   const [isCallActive, setIsCallActive] = useState(false);
   const [stream, setStream] = useState(null);
   const [remoteStream, setRemoteStream] = useState(null);
 
   // Automatic Speech Recognition
   const recorderRef = useRef(null);
-  const audioContextRef = useRef(null);
-  const [recording, setRecording] = useState(false);
-  const [chunks, setChunks] = useState([]);
-  const [isListening, setIsListening] = useState(false);
+  const [isListening, setIsListening] = useState(false); // use in the ui to show user we are listening
   const [transcription, setTranscription] = useState("");
   const [language] = useState("en");
 
   const {
     loading: loadingModel,
     percentageLoaded,
-    modelIsLoaded,
+    isLoaded,
     generate,
     loadModel,
   } = useWorker({
@@ -43,9 +38,18 @@ function App() {
     },
     onComplete: (event) => {
       setIsListening(false);
+      console.log("Final transcription:", event);
       setTranscription(event.data.output);
     },
   });
+
+  // useMicVAD({
+  //   startOnLoad: false,
+  //   onSpeechEnd: (audio) => {
+  //     generate({ audio, language });
+  //     console.log("User stopped talking", audio);
+  //   },
+  // });
 
   const { wsRef, pcRef, clientId } = useSignaling({
     onTrack: async (event) => {
@@ -54,36 +58,66 @@ function App() {
         setRemoteStream(stream);
       }
     },
-    onRoomCreated: (roomId) => {
-      console.log("Room created:", roomId);
+    onRoomCreated: (data) => {
       setIsCallActive(true);
-      setRooms((prevRooms) => [...prevRooms, roomId]);
+      setCurrentRoom(data);
+    },
+    onNewRoomAdded: (data) => {
+      setRoomIds((prev) => [...prev, data.roomId]);
+    },
+    onRoomClosed: (data) => {
+      setRoomIds((prev) => prev.filter((id) => id !== data.roomId));
+    },
+    onParticipantJoined: (data) => {
+      // Use functional update to avoid stale closure
+      setCurrentRoom((currentRoom) => {
+        if (!currentRoom) return data;
+
+        if (currentRoom && data.roomId === currentRoom.roomId) {
+          return {
+            ...currentRoom,
+            participants: data.participants,
+          };
+        }
+        return currentRoom;
+      });
     },
     onNewClientSocketConnection: (message) => {
       console.log("WebSocket connection established:", message);
-      setRooms(message.rooms || []);
+      setRoomIds(() => {
+        console.log(message.roomIds);
+        return message.roomIds || [];
+      });
     },
     onicecandidateAdded: () => {
       setIsCallActive(true);
     },
   });
 
-  const joinCall = async () => {
+  const participantName = currentRoom?.participants?.find(
+    (p) => p.id !== clientId
+  )?.username;
+
+  const joinCall = async (username) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(
         JSON.stringify({
-          type: "join",
+          type: "join-room",
+          roomId: roomIds[0], // TODO: we need to list available roomIds that are not filled
+          clientId,
+          username,
         })
       );
     }
   };
 
-  const createRoom = async () => {
+  const createRoom = async (username) => {
     wsRef.current.send(
       JSON.stringify({
         type: "create-room",
         roomId: "room1",
         clientId,
+        username,
       })
     );
   };
@@ -103,92 +137,39 @@ function App() {
     }
   };
 
-  const setRemoteVideoStream = async () => {
-    if (remoteVideo.current && remoteStream) {
-      const stream = remoteStream;
-
-      remoteVideo.current.srcObject = stream;
-      // Try to force play the video
-      try {
-        await remoteVideo.current.play();
-      } catch (playError) {
-        console.error("Remote video play() failed:", playError);
-      }
-    }
-  };
-
   useEffect(() => {
-    if (isCallActive && localVideo.current && stream) {
-      localVideo.current.srcObject = stream;
+    const setRemoteVideoStream = async () => {
+      if (remoteVideo.current && remoteStream) {
+        const stream = remoteStream;
 
-      const audioTrack = stream.getAudioTracks()[0];
-      const audioStream = new MediaStream([audioTrack]);
-
-      recorderRef.current = new MediaRecorder(audioStream);
-      audioContextRef.current = new AudioContext({
-        sampleRate: WHISPER_SAMPLING_RATE,
-      });
-
-      recorderRef.current.onstart = () => {
-        setRecording(true);
-        setChunks([]);
-      };
-      recorderRef.current.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          setChunks((prev) => [...prev, e.data]);
-        } else {
-          // Empty chunk received, so we request new data after a short timeout
-          setTimeout(() => {
-            recorderRef.current.requestData();
-          }, 25);
+        remoteVideo.current.srcObject = stream;
+        try {
+          await remoteVideo.current.play();
+        } catch (playError) {
+          console.error("Remote video play() failed:", playError);
         }
-      };
-
-      recorderRef.current.onstop = () => {
-        setRecording(false);
-      };
-    }
-
-    if (isCallActive && localVideo.current && stream && modelIsLoaded) {
-      recorderRef.current?.start();
-    }
-
-    return () => {
-      recorderRef.current?.stop();
-      recorderRef.current = null;
+      }
     };
-  }, [stream, isCallActive]);
 
-  useEffect(() => {
     setRemoteVideoStream();
   }, [remoteStream]);
 
   useEffect(() => {
-    if (!recorderRef.current) return;
-    if (!recording) return;
-    if (isListening) return;
-    if (!modelIsLoaded) return;
-
-    if (chunks.length > 0) {
-      // Generate from data
-      getAudioInput(
-        chunks,
-        recorderRef.current.mimeType,
-        audioContextRef,
-        (audio) => generate({ audio, language })
-      );
-    } else {
-      recorderRef.current?.requestData();
+    if (isCallActive && localVideo.current && stream) {
+      localVideo.current.srcObject = stream;
     }
-  }, [recording, isListening, chunks, language]);
+  }, [stream, isCallActive]);
+
+  if (!IS_WEBGPU_AVAILABLE) {
+    return <div>WebGPU is not available in your browser.</div>;
+  }
 
   return (
     <>
-      {JSON.stringify(transcription)}
       {isCallActive ? (
         <>
           <figure>
-            <figcaption>Local Video</figcaption>
+            <figcaption>Me</figcaption>
             <video
               ref={localVideo}
               id="localVideo"
@@ -203,7 +184,7 @@ function App() {
             ></video>
           </figure>
           <figure>
-            <figcaption>Remote Video</figcaption>
+            <figcaption>{participantName}</figcaption>
             <video
               ref={remoteVideo}
               id="remoteVideo"
@@ -220,16 +201,20 @@ function App() {
         </>
       ) : (
         <>
-          <button disabled={loadingModel} onClick={loadModel}>
-            {loadingModel
-              ? `loading model... (${percentageLoaded}%)`
-              : "Load model"}
-          </button>
+          {JSON.stringify(roomIds)}
           <WaitingRoom
             stream={stream}
+            model={{
+              percentage: percentageLoaded,
+              loading: loadingModel,
+              isLoaded,
+              load: loadModel,
+            }}
             onCollectMedia={getMediaStream}
-            onJoinCall={rooms.length ? joinCall : createRoom}
-            actionText={rooms.length ? "Join Call" : "Create Room"}
+            onJoinCall={(name) =>
+              roomIds.length ? joinCall(name) : createRoom(name)
+            }
+            actionText={roomIds.length ? "Join Call" : "Create Room"}
           />
         </>
       )}

@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^3.7.4",
+    "@ricky0123/vad-react": "0.0.32",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "ws": "^8.18.3"

@@ -38,16 +38,18 @@ h1 {
 button {
   border-radius: 8px;
   border: 1px solid transparent;
-  padding: 0.6em 1.2em;
+  padding: 0.8em 1.2em;
   font-size: 1em;
   font-weight: 500;
   font-family: inherit;
-  background-color: #1a1a1a;
   cursor: pointer;
-  transition: border-color 0.25s;
+  transition: background-color 0.25s;
+  background-color: #359eff ;
+  width: 100%;
+  font-weight: bold;
 }
 button:hover {
-  border-color: #646cff;
+ background-color: #2b8cee;
 }
 button:focus,
 button:focus-visible {
@@ -64,5 +66,106 @@ button:focus-visible {
   }
   button {
     background-color: #f9f9f9;
+  }
+}
+
+
+
+progress {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 12px;
+  border: none;
+  border-radius: 6px;
+  background-color: #e0f0ff;
+  overflow: hidden;
+}
+
+/* Webkit browsers (Chrome, Safari) */
+progress::-webkit-progress-bar {
+  background-color: #e0f0ff;
+  border-radius: 6px;
+}
+
+progress::-webkit-progress-value {
+  background-color: #359eff;
+  border-radius: 6px;
+}
+
+/* Firefox */
+progress::-moz-progress-bar {
+  background-color: #359eff;
+  border-radius: 6px;
+}
+
+
+.loading-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 2rem;
+
+  label {
+    color: oklch(70.7% 0.022 261.325);
+    font-size: 14px;
+  }
+}
+
+.name-input {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+
+  label {
+    font-size: 14px;
+  }
+
+  input {
+    font: inherit;
+    border-radius: 8px;
+    border: 1px solid oklch(55.1% 0.027 264.364);
+    padding: 0.5em 0.8em;
+    font-size: 1em;
+    width: 100%;
+    box-sizing: border-box;
+    background-color: transparent;
+  }
+
+}
+
+.waiting-room-video {
+  width: 100%;
+  margin: 0;
+  margin-bottom: 1.5rem;
+
+  video {
+    width: 100%;
+    border-radius: 8px;
+    background-color: black;
+    height: 320px;
+  }
+}
+
+header {
+  text-align: center;
+  h2 {
+    margin: 0;
+    margin-bottom: 0rem;
+    margin-top: 0;
+    font-weight: 600;
+    font-size: 1.5em;
+  }
+  p {
+    color: oklch(70.7% 0.022 261.325);
+    font-size: 14px;
+    margin-bottom: 1.5rem;
+  }
+}
+
+.model-loader {
+  p {
+    font-size: 14px;
   }
 }
