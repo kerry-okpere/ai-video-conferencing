@@ -48,9 +48,11 @@ const useWorker = ({ onStart, onComplete }) => {
         worker.current.addEventListener("message", onMessageReceived);
 
         return () => {
-            worker.current.removeEventListener("message", onMessageReceived);
+            if (worker.current) {
+                worker.current.removeEventListener("message", onMessageReceived);
+            }
         };
-    }, []);
+    }, [onStart, onComplete]);
 
     return {
         isLoaded: status === "loaded",
@@ -59,6 +61,19 @@ const useWorker = ({ onStart, onComplete }) => {
         status,
         loadModel,
         generate,
+        terminate: () => {
+            try {
+                if (worker.current) {
+                    worker.current.terminate();
+                    worker.current = null;
+                }
+            } catch (err) {
+                console.warn('Failed to terminate worker', err);
+            }
+            setStatus(null);
+            setLoading(false);
+            setPercentageLoaded(0);
+        },
     }
 }
 

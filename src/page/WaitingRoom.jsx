@@ -5,7 +5,10 @@ const WaitingRoom = ({
   actionText,
   onCollectMedia,
   onJoinCall,
-  model,
+  onLanguageChange,
+  selectedLanguage,
+  isTranslatorSupported,
+  supportedLanguages,
 }) => {
   const [name, setName] = useState("");
   const localVideo = useRef(null);
@@ -21,7 +24,7 @@ const WaitingRoom = ({
   }, [stream]);
 
   return (
-    <section>
+    <section className="waiting-room">
       <header>
         <h2>Join Call</h2>
         <p>Set up your Audio, Video and Name before joining</p>
@@ -47,37 +50,28 @@ const WaitingRoom = ({
         />
       </div>
 
-      {model.loading && (
-        <div className="loading-progress">
-          <label htmlFor="file">
-            Loading model, this might take a few minutes...
-          </label>
+      <div className="language-selection">
+        <label htmlFor="language">Language:</label>
+        <select
+          id="language"
+          value={selectedLanguage}
+          onChange={(e) => onLanguageChange(e.target.value)}
+          disabled={!isTranslatorSupported}
+        >
+          {supportedLanguages.map((lang) => (
+            <option key={lang.value} value={lang.value}>
+              {lang.label}
+            </option>
+          ))}
+        </select>
+        {!isTranslatorSupported && (
+          <p className="warning">Translation not supported in this browser</p>
+        )}
+      </div>
 
-          <progress id="file" max={100} value={model.percentage}>
-            {model.percentage}%
-          </progress>
-        </div>
-      )}
-
-      {!model.isLoaded && (
-        <button onClick={() => onJoinCall(name)}>{`${actionText} without model`}</button>
-      )}
-      {model.isLoaded ? (
-        <button disabled={!name} onClick={() => onJoinCall(name)}>
-          {actionText}
-        </button>
-      ) : (
-        <div className="model-loader">
-          {!model.loading && (
-            <p>Call requires STT model to be loaded before you can join.</p>
-          )}
-          <button disabled={model.loading} onClick={model.load}>
-            {model.loading
-              ? `loading model... (${model.percentage}%)`
-              : "Load model"}
-          </button>
-        </div>
-      )}
+      <button disabled={!name} onClick={() => onJoinCall(name)}>
+        {actionText}
+      </button>
     </section>
   );
 };
